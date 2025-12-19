@@ -1,0 +1,15 @@
+CascadeMinimizer.cc[184] : (in function: improveOnce) - Minimization configured with Type=Minuit2, Algo=Migrad, strategy=1, tolerance=0.1
+CascadeMinimizer.cc[211] : (in function: improveOnce) - [WARNING] The NLL has zero floating parameters at the start of CascadeMinimizer::improveOnce().
+	This may indicate a problem with the model or the configuration.
+	If your intent is to only float BB parameters, remember that these are by default evaluated analytically and, hence, excluded from the minimization.
+	You can disable the analytic BB treatment by setting --X-rtd MINIMIZER_no_analytic.
+
+CascadeMinimizer.cc[229] : (in function: improveOnce) - Minimization finished with status=-1
+CascadeMinimizer.cc[234] : (in function: improveOnce) - Minimization ended with latest status != 0 or 1
+FitterAlgoBase.cc[269] : (in function: doFit) - Initial minimization failed. Aborting.
+CascadeMinimizer.cc[184] : (in function: improveOnce) - Minimization configured with Type=Minuit2, Algo=Migrad, strategy=1, tolerance=0.1
+CascadeMinimizer.cc[229] : (in function: improveOnce) - Minimization finished with status=0
+CascadeMinimizer.cc[233] : (in function: improveOnce) - Minimization success! status=0
+CascadeMinimizer.cc[184] : (in function: improveOnce) - Minimization configured with Type=Minuit2, Algo=Migrad, strategy=1, tolerance=0.1
+CascadeMinimizer.cc[229] : (in function: improveOnce) - Minimization finished with status=0
+CascadeMinimizer.cc[233] : (in function: improveOnce) - Minimization success! status=0

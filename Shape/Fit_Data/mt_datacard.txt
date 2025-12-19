@@ -1,0 +1,13 @@
+imax 1
+jmax *
+kmax *
+
+shapes * mt mt_shapes.root mt/$PROCESS
+
+bin mt
+observation -1
+
+bin     mt mt mt mt mt
+process Signal WJets ZJets TTbar Diboson
+process 0 1 2 3 4
+rate    -1 -1 -1 -1 -1
