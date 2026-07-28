@@ -12,65 +12,47 @@ class StopAnalysisProcessorSMSLess(processor.ProcessorABC):
 
         # Histograms you want
         self._accumulator = {
-            "met": hist.Hist(
-                hist.axis.StrCategory([], growth=True, name="process"),
-                hist.axis.StrCategory([], growth=True, name="year"),
-                hist.axis.Regular(43, 200, 1000, name="met", label="MET [GeV]", underflow=True, overflow=True),
-                storage=hist.storage.Weight()
-            ),
-            "njets": hist.Hist(
-                hist.axis.StrCategory([], growth=True, name="process"),
-                hist.axis.StrCategory([], growth=True, name="year"),
-                hist.axis.Regular(10, 0, 10, name="njets", underflow=True, overflow=True),
-                storage=hist.storage.Weight()
-            ),
+
             "jet1_pt": hist.Hist(
                 hist.axis.StrCategory([], growth=True, name="process"),
                 hist.axis.StrCategory([], growth=True, name="year"),
-                hist.axis.Regular(41, 100, 1000, name="jet1_pt", label="Jet 1 PT [GeV]", underflow=True, overflow=True),
+                hist.axis.Regular(43, 0, 1000, name="pt_jet1", label="pt jet1 [GeV]", underflow=True, overflow=True),
                 storage=hist.storage.Weight()
             ),
+
+            "jet1_eta": hist.Hist(
+                hist.axis.StrCategory([], growth=True, name="process"),
+                hist.axis.StrCategory([], growth=True, name="year"),
+                hist.axis.Regular(60, -3, 3, name="eta_jet1", label="eta jet1", underflow=True, overflow=True),
+                storage=hist.storage.Weight()
+            ),
+
+            "jet1_phi": hist.Hist(
+                hist.axis.StrCategory([], growth=True, name="process"),
+                hist.axis.StrCategory([], growth=True, name="year"),
+                hist.axis.Regular(60, -np.pi, np.pi, name="phi_jet1", label="phi jet1", underflow=True, overflow=True),
+                storage=hist.storage.Weight()
+            ),
+
+            "met": hist.Hist(
+                hist.axis.StrCategory([], growth=True, name="process"),
+                hist.axis.StrCategory([], growth=True, name="year"),
+                hist.axis.Regular(43, 0, 1000, name="met", label="MET [GeV]", underflow=True, overflow=True),
+                storage=hist.storage.Weight()
+            ),
+
             "HT": hist.Hist(
                 hist.axis.StrCategory([], growth=True, name="process"),
                 hist.axis.StrCategory([], growth=True, name="year"),
-                hist.axis.Regular(40, 200, 1000, name="HT", label="HT [GeV]", underflow=True, overflow=True),
+                hist.axis.Regular(43, 0, 1000, name="HT", label="HT [GeV]", underflow=True, overflow=True),
                 storage=hist.storage.Weight()
             ),
-            "met_Njets2": hist.Hist(
+
+            "njet": hist.Hist(
                 hist.axis.StrCategory([], growth=True, name="process"),
                 hist.axis.StrCategory([], growth=True, name="year"),
-                hist.axis.Regular(43, 200, 1000, name="met", label="MET [GeV]", underflow=True, overflow=True),
+                hist.axis.Regular(10, 0, 10, name="n_jets", label="MET [GeV]", underflow=True, overflow=True),
                 storage=hist.storage.Weight()
-            ),
-            "njets_Njets2": hist.Hist(
-                hist.axis.StrCategory([], growth=True, name="process"),
-                hist.axis.StrCategory([], growth=True, name="year"),
-                hist.axis.Regular(10, 0, 10, name="njets", underflow=True, overflow=True),
-                storage=hist.storage.Weight()
-            ),
-            "jet1_pt_Njets2": hist.Hist(
-                hist.axis.StrCategory([], growth=True, name="process"),
-                hist.axis.StrCategory([], growth=True, name="year"),
-                hist.axis.Regular(41, 100, 1000, name="jet1_pt", label="Jet 1 PT [GeV]", underflow=True, overflow=True),
-                storage=hist.storage.Weight()
-            ),
-            "HT_Njets2": hist.Hist(
-                hist.axis.StrCategory([], growth=True, name="process"),
-                hist.axis.StrCategory([], growth=True, name="year"),
-                hist.axis.Regular(40, 200, 1000, name="HT", label="HT [GeV]", underflow=True, overflow=True),
-                storage=hist.storage.Weight()
-            ),
-            "met_raw": hist.Hist(
-                hist.axis.StrCategory([], growth=True, name="process"),
-                hist.axis.StrCategory([], growth=True, name="samplename"),  # need sample level!
-                hist.axis.StrCategory([], growth=True, name="year"),
-                hist.axis.Regular(43, 0, 1000, name="met", label="MET [GeV]", underflow=True, overflow=True),
-            ),
-            "met_raw_Njets2": hist.Hist(
-                hist.axis.StrCategory([], growth=True, name="process"),
-                hist.axis.StrCategory([], growth=True, name="samplename"),  # need sample level!
-                hist.axis.StrCategory([], growth=True, name="year"),
-                hist.axis.Regular(43, 0, 1000, name="met", label="MET [GeV]", underflow=True, overflow=True),
             ),
         }
 
@@ -94,6 +76,7 @@ class StopAnalysisProcessorSMSLess(processor.ProcessorABC):
         isotracks = events.IsoTrack
         CaloMet = events.CaloMET
         ChgedMet = events.ChsMET
+        genpart = events.GenPart
 
         # --------------------
         # 2. Object Selection
@@ -104,10 +87,13 @@ class StopAnalysisProcessorSMSLess(processor.ProcessorABC):
             (jets.jetId >= 2)
         ]
 
+        #### tests bad region
+
         hcal_bad_region = (
         (good_jets.phi > -1.57) & (good_jets.phi < -0.87) &
         (good_jets.eta > -3.0) & (good_jets.eta < -1.3)
         )
+
         if year == "2018":
             good_jets = good_jets[~hcal_bad_region]
 
@@ -139,7 +125,13 @@ class StopAnalysisProcessorSMSLess(processor.ProcessorABC):
         good_jets_pad = ak.pad_none(good_jets, 5)   
         jet1_pt = ak.fill_none(good_jets_pad[:, 0].pt, np.nan)
         jet2_pt = ak.fill_none(good_jets_pad[:, 1].pt, np.nan)
+        jet3_pt = ak.fill_none(good_jets_pad[:, 2].pt, np.nan)
+        jet4_pt = ak.fill_none(good_jets_pad[:, 3].pt, np.nan)
         Ht = ak.sum(good_jets.pt, axis=1)
+        jet1_eta = ak.fill_none(good_jets_pad[:, 0].eta, np.nan)
+        jet2_eta = ak.fill_none(good_jets_pad[:, 1].eta, np.nan)
+        jet3_eta = ak.fill_none(good_jets_pad[:, 2].eta, np.nan)
+        jet4_eta = ak.fill_none(good_jets_pad[:, 3].eta, np.nan)
         jet1_phi = ak.fill_none(good_jets_pad[:, 0].phi, np.nan)
         jet2_phi = ak.fill_none(good_jets_pad[:, 1].phi, np.nan)
         jet3_phi = ak.fill_none(good_jets_pad[:, 2].phi, np.nan)
@@ -150,7 +142,7 @@ class StopAnalysisProcessorSMSLess(processor.ProcessorABC):
         dphi_jet3 = np.array(ak.to_numpy(dphi(jet3_phi, met.phi)))
         dphi_jet4 = np.array(ak.to_numpy(dphi(jet4_phi, met.phi)))
         dphi_jet5 = np.array(ak.to_numpy(dphi(jet5_phi, met.phi)))
-        #mindphi = np.nanmin(np.stack([abs(dphi_jet1), abs(dphi_jet2), abs(dphi_jet3), abs(dphi_jet4)], axis=1), axis=1)
+        # mindphi = np.nanmin(np.stack([abs(dphi_jet1), abs(dphi_jet2), abs(dphi_jet3), abs(dphi_jet4)], axis=1), axis=1)
 
         jet2_missing = np.isnan(dphi_jet2)
         jet3_missing = np.isnan(dphi_jet3)
@@ -164,31 +156,14 @@ class StopAnalysisProcessorSMSLess(processor.ProcessorABC):
             (np.array(n_IsoTracks) == 0) &
             (np.array(n_jets) >= 1) &
             (np.array(met.pt) > 280) &
-            (np.array(n_taus) == 0) &
-            (np.array(n_muons) == 0) &
-            (np.array(n_electrons) == 0) &
+            (ak.sum(taus.idDeepTau2017v2p1VSe >= 1, axis=1) == 0) &
+            (ak.sum(muons.looseId == 1, axis=1) == 0) &
+            (ak.sum(electrons.cutBased > 0, axis=1) == 0) &
             (np.array(Ht) > 200) &
             (abs(dphi_jet1) > 0.5) &
             (jet2_missing | (abs(dphi_jet2) > 0.5)) &
-            (jet3_missing | (abs(dphi_jet3) > 0.5)) &
-            (jet4_missing | (abs(dphi_jet4) > 0.5)) &
-            (met_cleaning_calo < 0.5) &
-            (abs(met_cleaning_chged) < 2.0)
-        )
-
-        selection_Njets2 = (
-            (np.array(jet1_pt) > 110) &
-            (np.array(n_IsoTracks) == 0) &
-            (np.array(n_jets) >= 2) &
-            (np.array(met.pt) > 280) &
-            (np.array(n_taus) == 0) &
-            (np.array(n_muons) == 0) &
-            (np.array(n_electrons) == 0) &
-            (np.array(Ht) > 200) &
-            (abs(dphi_jet1) > 0.5) &
-            (jet2_missing | (abs(dphi_jet2) > 0.5)) &
-            (jet3_missing | (abs(dphi_jet3) > 0.5)) &
-            (jet4_missing | (abs(dphi_jet4) > 0.5)) &
+            (jet3_missing | (abs(dphi_jet3) > 0.25)) &
+            (jet4_missing | (abs(dphi_jet4) > 0.25)) &
             (met_cleaning_calo < 0.5) &
             (abs(met_cleaning_chged) < 2.0)
         )
@@ -214,28 +189,38 @@ class StopAnalysisProcessorSMSLess(processor.ProcessorABC):
             genw = np.ones(len(events))
         
         weights = genw * lumi * xsec / Ngen
+        has_jet2 = n_jets >= 2
+        has_jet3 = n_jets >= 3
+        has_jet4 = n_jets >= 4
 
         # --------------------
         # 5. Fill Histograms
         # --------------------
+        self._accumulator["jet1_pt"].fill(
+            process=process,
+            year=year,
+            pt_jet1=jet1_pt[selection_base],
+            weight=weights[selection_base]
+        )
+
+        self._accumulator["jet1_eta"].fill(
+            process=process,
+            year=year,
+            eta_jet1=jet1_eta[selection_base],
+            weight=weights[selection_base]
+        )
+
+        self._accumulator["jet1_phi"].fill(
+            process=process,
+            year=year,
+            phi_jet1=jet1_phi[selection_base],
+            weight=weights[selection_base]
+        )
+
         self._accumulator["met"].fill(
             process=process,
             year=year,
             met=met.pt[selection_base],
-            weight=weights[selection_base]
-        )
-
-        self._accumulator["njets"].fill(
-            process=process,
-            year=year,
-            njets=n_jets[selection_base],
-            weight=weights[selection_base]
-        )
-
-        self._accumulator["jet1_pt"].fill(
-            process=process,
-            year=year,
-            jet1_pt=jet1_pt[selection_base],
             weight=weights[selection_base]
         )
 
@@ -246,48 +231,11 @@ class StopAnalysisProcessorSMSLess(processor.ProcessorABC):
             weight=weights[selection_base]
         )
 
-        self._accumulator["met_Njets2"].fill(
+        self._accumulator["njet"].fill(
             process=process,
             year=year,
-            met=met.pt[selection_Njets2],
-            weight=weights[selection_Njets2]
-        )
-
-        self._accumulator["njets_Njets2"].fill(
-            process=process,
-            year=year,
-            njets=n_jets[selection_Njets2],
-            weight=weights[selection_Njets2]
-        )
-
-        self._accumulator["jet1_pt_Njets2"].fill(
-            process=process,
-            year=year,
-            jet1_pt=jet1_pt[selection_Njets2],
-            weight=weights[selection_Njets2]
-        )
-
-        self._accumulator["HT_Njets2"].fill(
-            process=process,
-            year=year,
-            HT=Ht[selection_Njets2],
-            weight=weights[selection_Njets2]
-        )
-
-        self._accumulator["met_raw"].fill(
-            process=process,
-            samplename=sample,
-            year=year,
-            met=met.pt[selection_base],
-            weight=np.ones(ak.sum(selection_base))  # unweighted
-        )
-
-        self._accumulator["met_raw_Njets2"].fill(
-            process=process,
-            samplename=sample,
-            year=year,
-            met=met.pt[selection_Njets2],
-            weight=np.ones(ak.sum(selection_Njets2))  # unweighted
+            n_jets=n_jets[selection_base],
+            weight=weights[selection_base]
         )
 
         return self._accumulator
