@@ -1,11 +1,11 @@
 import json
 from coffea.nanoevents import NanoEventsFactory, NanoAODSchema
 from coffea import processor
-from analysisSMSLess import StopAnalysisProcessorSMSLess
+from analysis import StopAnalysisProcessorSMSLess
 import coffea.util as util
 
 # Load samples
-with open("../Datasets/samples.json") as f:
+with open("Datasets/samples.json") as f:
     samples = json.load(f)
 
 fileset = {}
@@ -14,7 +14,7 @@ fileset = {}
 for process in samples["MC"]:
     for sample in samples["MC"][process]:
         for year, info in samples["MC"][process][sample].items():
-            if year == "2017":
+            if year == "2018":
                 dataset_name = f"{process}__{sample}__{year}"
 
                 if dataset_name not in fileset:

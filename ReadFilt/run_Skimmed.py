@@ -5,7 +5,7 @@ from analysisSkimmed import StopAnalysisProcessorSkimmed
 import coffea.util as util
 
 # Load samples
-with open("../Datasets/samples_Skimmed.json") as f:
+with open("Datasets/samples_Skimmed.json") as f:
     samples = json.load(f)
 
 fileset = {}
