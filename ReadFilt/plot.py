@@ -158,9 +158,12 @@ def plot_histogram(histogram, variable_name):
         stacked_processes, signal_processes, all_processes
     )
 
+
+# changed "njets" to "njet"
+# removed jet2 variables (excluded from analysis?)
 variables_to_plot = [
-    "met", "njets", "jet1_pt", "HT",
-    "met_Njets2", "njets_Njets2", "jet1_pt_Njets2", "HT_Njets2"
+    "met", "njet", "jet1_pt", "HT"#,
+    #"met_Njets2", "njets_Njets2", "jet1_pt_Njets2", "HT_Njets2"
 ]
 
 all_yields = {}
