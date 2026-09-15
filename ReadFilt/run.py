@@ -5,7 +5,7 @@ from analysis import StopAnalysisProcessorSMSLess
 import coffea.util as util
 
 # Load samples
-with open("Datasets/samples.json") as f:
+with open("../Datasets/samples.json") as f:
     samples = json.load(f)
 
 fileset = {}

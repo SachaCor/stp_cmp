@@ -11,7 +11,7 @@ output_dir = f"plots_{year}"
 os.makedirs(output_dir, exist_ok=True)
 output = util.load(input_file)
 
-with open("Datasets/samples.json") as f:
+with open("../Datasets/samples.json") as f:
     samples = json.load(f)
 
 lumi = samples["luminosity"][year] * 1000  # /pb
