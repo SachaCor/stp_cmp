@@ -81,6 +81,14 @@ class StopAnalysisMC_Data(processor.ProcessorABC):
                 storage=hist.storage.Weight()
             ),
 
+            "2D_jet1_eta_phi_postHEM": hist.Hist(
+                hist.axis.StrCategory([], growth=True, name="process"),
+                hist.axis.StrCategory([], growth=True, name="year"),
+                hist.axis.Regular(48, -2.4, 2.4, name="jet1_eta", label="jet1 eta"),
+                hist.axis.Regular(63, -np.pi, np.pi, name="jet1_phi", label="jet1 phi", underflow=True, overflow=True),
+                storage=hist.storage.Weight()
+            ),
+
         }
 
     @property
@@ -95,9 +103,87 @@ class StopAnalysisMC_Data(processor.ProcessorABC):
         path = "/users/scormenier/stp/MC_Data/Reweighting/PU/" + year + "_UL/puWeights.json.gz"
         with gzip.open(path, "rt") as f:
             pu_json_str = f.read().strip()
+
+        jme_path = "/users/scormenier/stp/MC_Data/Reweighting/JME/"
+
+        self.jerc_cset = correctionlib.CorrectionSet.from_file(jme_path + year + "_UL/jet_jerc.json.gz")
+        self.jersmear_cset = correctionlib.CorrectionSet.from_file(jme_path + "jer_smear.json.gz")
+
+        vetomap_cset = correctionlib.CorrectionSet.from_file(jme_path + year + "_UL/jetvetomaps.json.gz")
+        if year == "2018":
+            vetomap_corr = vetomap_cset["Summer19UL18_V1"]
+        elif year == "2017":
+            vetomap_corr = vetomap_cset["Summer19UL17_V1"]
+        else:
+            vetomap_corr = None
+
+        met_cset = correctionlib.CorrectionSet.from_file(jme_path + year + "_UL/met.json.gz")
         # --------------------
         # 1. Object Definition
         # --------------------
+
+        def apply_met_xy(met_pt, met_phi, npvs, run, is_mc, year, met_cset):
+            key_pt  = f"pt_metphicorr_pfmet_{'mc' if is_mc else 'data'}"
+            key_phi = f"phi_metphicorr_pfmet_{'mc' if is_mc else 'data'}"
+            corr_pt, corr_phi = met_cset[key_pt], met_cset[key_phi]
+
+            npvs_c = ak.to_numpy(ak.fill_none(npvs, 0))
+            run_c  = ak.to_numpy(run) if not is_mc else np.zeros(len(met_pt), dtype=np.int64)
+
+            new_pt  = corr_pt.evaluate(ak.to_numpy(met_pt), ak.to_numpy(met_phi), npvs_c, run_c)
+            new_phi = corr_phi.evaluate(ak.to_numpy(met_pt), ak.to_numpy(met_phi), npvs_c, run_c)
+            return new_pt, new_phi
+
+        def apply_jer(events, jerc_cset, jersmear_cset, is_mc, rho, year):
+            jets = events.Jet
+            if not is_mc:
+                return jets.pt, jets.mass
+        
+            if year == "2018":
+                reso_corr = jerc_cset["Summer19UL18_JRV2_MC_PtResolution_AK4PFchs"]
+                sf_corr   = jerc_cset["Summer19UL18_JRV2_MC_ScaleFactor_AK4PFchs"]
+            elif year == "2017":
+                reso_corr = jerc_cset["Summer19UL17_JRV2_MC_PtResolution_AK4PFchs"]
+                sf_corr   = jerc_cset["Summer19UL17_JRV2_MC_ScaleFactor_AK4PFchs"]
+
+            smear_corr = jersmear_cset["JERSmear"]
+
+            counts = ak.num(jets.pt)
+            pt_flat  = ak.to_numpy(ak.flatten(jets.pt))
+            eta_flat = ak.to_numpy(ak.flatten(jets.eta))
+            rho_flat = ak.to_numpy(ak.flatten(ak.broadcast_arrays(rho, jets.pt)[0]))
+            evt_flat = ak.to_numpy(ak.flatten(ak.broadcast_arrays(events.event, jets.pt)[0])).astype(np.float32)
+
+            resolution = reso_corr.evaluate(eta_flat, pt_flat, rho_flat)
+            jer_sf     = sf_corr.evaluate(eta_flat, "nom")   # "up"/"down" later for JER systematics
+
+            # gen-jet matching: dR < R_cone/2 (R=0.4 -> 0.2), |pt - genpt| < 3*sigma*pt
+            genjet = events.GenJet
+            matched, dr = jets.nearest(genjet, return_metric=True)
+            sigma = resolution * ak.to_numpy(ak.flatten(jets.pt))  # flat, same ordering as pt_flat
+            good_match = (ak.fill_none(dr, 999.0) < 0.2) & \
+                        (abs(jets.pt - ak.fill_none(matched.pt, -999.0)) < 3 * ak.unflatten(sigma, counts) * jets.pt)
+            gen_pt_flat = ak.to_numpy(ak.flatten(ak.where(good_match, ak.fill_none(matched.pt, -1.0), -1.0)))
+
+            smear_factor = smear_corr.evaluate(
+                pt_flat, eta_flat, gen_pt_flat, rho_flat, evt_flat, resolution, jer_sf
+            )
+
+            smeared_pt = ak.unflatten(pt_flat * smear_factor, counts)
+            smeared_mass = jets.mass * (smeared_pt / jets.pt)
+            return smeared_pt, smeared_mass
+
+        def propagate_to_met(met, jets_before, jets_after, pt_threshold=15.0):
+            # only propagate for jets above threshold, as in standard Type-1 MET
+            mask = jets_before.pt > pt_threshold
+            dpx = ak.sum((jets_after.pt - jets_before.pt) * np.cos(jets_before.phi) * mask, axis=1)
+            dpy = ak.sum((jets_after.pt - jets_before.pt) * np.sin(jets_before.phi) * mask, axis=1)
+
+            met_px = met.pt * np.cos(met.phi) - dpx
+            met_py = met.pt * np.sin(met.phi) - dpy
+            new_pt = np.sqrt(met_px**2 + met_py**2)
+            new_phi = np.arctan2(met_py, met_px)
+            return new_pt, new_phi
 
         def get_loose_hem_jets(events):
             jets = events.Jet
@@ -192,6 +278,14 @@ class StopAnalysisMC_Data(processor.ProcessorABC):
                 h = int(hashlib.sha256(key).hexdigest(), 16)
                 out[i] = (h % (2**32)) / 2**32
             return out
+
+        def get_veto_map_mask(jets, vetomap_corr, map_name="jetvetomap"):
+            if vetomap_corr is not None:
+                eta_flat = ak.flatten(jets.eta)
+                phi_flat = ak.flatten(jets.phi)
+                flags = vetomap_corr.evaluate(map_name, ak.to_numpy(eta_flat), ak.to_numpy(phi_flat))
+                in_veto_region = ak.unflatten(flags > 0, ak.num(jets.eta))
+                return ak.any(in_veto_region, axis=1)
         #----------------------------------------------------------
 
         is_data = (process == "data")
@@ -201,6 +295,15 @@ class StopAnalysisMC_Data(processor.ProcessorABC):
             "PFMET120_PFMHT120_IDTight_PFHT60",
         ]
 
+        veto_jets = events.Jet[
+            (events.Jet.pt > 30) & (abs(events.Jet.eta) < 2.4) & (events.Jet.jetId >= 2)
+        ]
+
+        #Apply jet veto mask using the vetomap correction
+        get_veto_mask = get_veto_map_mask(veto_jets, vetomap_corr, map_name="jetvetomap")
+        events = events[~get_veto_mask]
+
+        # Apply HEM veto for 2018 data and MC
         if year == "2018":
             if is_data:
                 # Only apply the HEM veto to runs in RunB(>=319077)/C/D
@@ -218,6 +321,25 @@ class StopAnalysisMC_Data(processor.ProcessorABC):
                     veto = hem_event_veto_mask(events)
                     drop_mask = in_hem_period & veto
                     events = events[~drop_mask]
+        
+        #Apply met filter flags
+        met_filter_flags = [
+            "goodVertices", "globalSuperTightHalo2016Filter", "HBHENoiseFilter",
+            "HBHENoiseIsoFilter", "EcalDeadCellTriggerPrimitiveFilter", "BadPFMuonFilter", "BadPFMuonDzFilter",
+        ]
+        if is_data:
+            met_filter_flags.append("eeBadScFilter")
+        if year in ("2017", "2018"):
+            met_filter_flags.append("ecalBadCalibFilter")
+
+        met_filter_mask = ak.Array(np.ones(len(events), dtype=bool))
+        for flag in met_filter_flags:
+            if flag in events.Flag.fields:
+                met_filter_mask = met_filter_mask & (events.Flag[flag] == 1)
+            else:
+                print(f"Warning: Flag_{flag} not found in {dataset}, skipping")
+
+        events = events[met_filter_mask]
 
         jets = events.Jet
         muons = events.Muon
@@ -228,6 +350,31 @@ class StopAnalysisMC_Data(processor.ProcessorABC):
         CaloMet = events.CaloMET
         ChgedMet = events.ChsMET
         pv = events.PV
+
+        #Apply JER smearing and propagate to MET
+        if not is_data:
+            smeared_pt, smeared_mass = apply_jer(
+                events,
+                self.jerc_cset,
+                self.jersmear_cset,
+                is_mc=not is_data,
+                rho=events.fixedGridRhoFastjetAll,
+                year=year
+            )
+            jets = ak.with_field(events.Jet, smeared_pt, "pt")
+            jets = ak.with_field(jets, smeared_mass, "mass")
+            met_pt, met_phi = propagate_to_met(met, events.Jet, jets)
+            met = ak.with_field(met, met_pt, "pt")
+            met = ak.with_field(met, met_phi, "phi")
+
+        #Apply MET phi correction
+        met_pt_np = ak.to_numpy(met.pt)
+        met_pt_clipped = np.clip(met_pt_np, 0, 6499.9)  # match the correction's actual Binning max -- confirm via c.data
+        met = ak.with_field(met, ak.Array(met_pt_clipped), "pt")
+
+        met_pt, met_phi = apply_met_xy(met.pt, met.phi, pv.npvs, events.run, not is_data, year, met_cset)
+        met = ak.with_field(met, met_pt, "pt")
+        met = ak.with_field(met, met_phi, "phi")
 
         good_jets = jets[(jets.pt > 30) & (abs(jets.eta) < 2.4) & (jets.jetId >= 2)]
 
@@ -249,10 +396,6 @@ class StopAnalysisMC_Data(processor.ProcessorABC):
             (isotracks.pfRelIso03_all < 0.1) &
             (mt_isotrack < 100)
         ]
-
-        # n_taus = ak.num(taus)
-        # n_muons = ak.num(muons)
-        # n_electrons = ak.num(electrons)
 
         # --------------------
         # 3. Event Selection
@@ -310,6 +453,7 @@ class StopAnalysisMC_Data(processor.ProcessorABC):
         # 4. Weights
         # --------------------
 
+        #Apply PU weights
         if year == "2017":
             PUkey = "Collisions17_UltraLegacy_goldenJSON"
         elif year == "2018":
@@ -319,8 +463,6 @@ class StopAnalysisMC_Data(processor.ProcessorABC):
             weights = np.ones(len(events))
             trigger_pass = get_trigger_or(events, TRIGGER_PATTERNS)
             selection_base = selection_base & trigger_pass
-            #nTrueInt = ak.Array([])  # For data, nTrueInt is not used, but we need to define it for histogram filling
-            pu_weight_nominal = np.zeros(len(events))
         else:
             lumi = self.samples["luminosity"][year] * 1000  # convert from /fb to /pb
             if process == "4BD-500-490" or process == "4BD-500-420":
@@ -403,18 +545,26 @@ class StopAnalysisMC_Data(processor.ProcessorABC):
                 weight=weights[selection_base]
             )
 
-        self._accumulator["PU_weights"].fill(
-            process=process,
-            year=year,
-            PU_weights=pu_weight_nominal[selection_base],
-            weight=(weights/pu_weight_nominal)[selection_base]
-        )
+            self._accumulator["PU_weights"].fill(
+                process=process,
+                year=year,
+                PU_weights=pu_weight_nominal[selection_base],
+                weight=(weights/pu_weight_nominal)[selection_base]
+            )
         
         self._accumulator["met_phi"].fill(
             process=process,
             year=year,
             met_phi=met.phi[selection_base],
             weight=weights[selection_base]
+        )
+
+        self._accumulator["2D_jet1_eta_phi_postHEM"].fill(
+            process=process,
+            year=year,
+            jet1_eta=jet1_eta[selection_base],
+            jet1_phi=jet1_phi[selection_base],
+            weight=weights[selection_base],
         )
 
         return self._accumulator
