@@ -10,10 +10,13 @@ import fnmatch
 
 class StopAnalysisMC_Data(processor.ProcessorABC):
 
-    def __init__(self, samples, hem_veto_run_min=319077, mc_drop_fraction=0.6478):
+    def __init__(self, samples, hem_veto_run_min=319077, mc_drop_fraction=0.6478, 
+    hem_met_phi_lo=-1.57, hem_met_phi_hi=-0.87):
         self.samples = samples
         self.hem_veto_run_min = hem_veto_run_min
         self.mc_drop_fraction = mc_drop_fraction
+        self.hem_met_phi_lo = hem_met_phi_lo
+        self.hem_met_phi_hi = hem_met_phi_hi
 
         # Histograms you want
         self._accumulator = {
@@ -303,24 +306,40 @@ class StopAnalysisMC_Data(processor.ProcessorABC):
         get_veto_mask = get_veto_map_mask(veto_jets, vetomap_corr, map_name="jetvetomap")
         events = events[~get_veto_mask]
 
-        # Apply HEM veto for 2018 data and MC
+        # Flag events belonging to the HEM-affected period (data: runs >= 319077,
+        # MC: deterministic random fraction matching the affected lumi fraction)
         if year == "2018":
             if is_data:
-                # Only apply the HEM veto to runs in RunB(>=319077)/C/D
-                run_in_hem_window = events.run >= self.hem_veto_run_min
-                veto = hem_event_veto_mask(events)
-                drop_mask = run_in_hem_window & veto
-                events = events[~drop_mask]
+                in_hem_period = ak.to_numpy(events.run) >= self.hem_veto_run_min
             else:
-                # MC: randomly drop the equivalent fraction, reproducibly per-dataset
-                if self.mc_drop_fraction > 0:
-                    draw = get_deterministic_uniform(
-                        dataset, events.run, events.luminosityBlock, events.event
-                    )
-                    in_hem_period = draw < self.mc_drop_fraction
-                    veto = hem_event_veto_mask(events)
-                    drop_mask = in_hem_period & veto
-                    events = events[~drop_mask]
+                draw = get_deterministic_uniform(
+                    dataset, events.run, events.luminosityBlock, events.event
+                )
+                in_hem_period = draw < self.mc_drop_fraction
+            events["in_hem_period"] = ak.Array(in_hem_period)
+
+            # Object-level HEM veto (unchanged logic)
+            veto = hem_event_veto_mask(events)
+            events = events[~(events.in_hem_period & veto)]
+
+        # # Apply HEM veto for 2018 data and MC
+        # if year == "2018":
+        #     if is_data:
+        #         # Only apply the HEM veto to runs in RunB(>=319077)/C/D
+        #         run_in_hem_window = events.run >= self.hem_veto_run_min
+        #         veto = hem_event_veto_mask(events)
+        #         drop_mask = run_in_hem_window & veto
+        #         events = events[~drop_mask]
+        #     else:
+        #         # MC: randomly drop the equivalent fraction, reproducibly per-dataset
+        #         if self.mc_drop_fraction > 0:
+        #             draw = get_deterministic_uniform(
+        #                 dataset, events.run, events.luminosityBlock, events.event
+        #             )
+        #             in_hem_period = draw < self.mc_drop_fraction
+        #             veto = hem_event_veto_mask(events)
+        #             drop_mask = in_hem_period & veto
+        #             events = events[~drop_mask]
         
         #Apply met filter flags
         met_filter_flags = [
@@ -375,6 +394,13 @@ class StopAnalysisMC_Data(processor.ProcessorABC):
         met_pt, met_phi = apply_met_xy(met.pt, met.phi, pv.npvs, events.run, not is_data, year, met_cset)
         met = ak.with_field(met, met_pt, "pt")
         met = ak.with_field(met, met_phi, "phi")
+
+        # Residual HEM15/16 veto from monojet studies (AN2020_042)
+        if year == "2018":
+            met_phi_in_window = (met.phi > self.hem_met_phi_lo) & (met.phi < self.hem_met_phi_hi)
+            hem_met_phi_veto = ak.to_numpy(events.in_hem_period & met_phi_in_window)
+        else:
+            hem_met_phi_veto = np.zeros(len(events), dtype=bool)
 
         good_jets = jets[(jets.pt > 30) & (abs(jets.eta) < 2.4) & (jets.jetId >= 2)]
 
@@ -448,6 +474,7 @@ class StopAnalysisMC_Data(processor.ProcessorABC):
             (met_cleaning_calo < 0.5) &
             (abs(met_cleaning_chged) < 2.0)
         )
+        selection_base = selection_base & ~hem_met_phi_veto
 
         # --------------------
         # 4. Weights
